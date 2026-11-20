@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="theme-color" content="#155eef"><title>Bulk Image Resizer & Compressor</title>
+<style>
+*{box-sizing:border-box}body{margin:0;padding:18px;background:#f3f6fb;color:#172033;font:16px Arial,sans-serif}.app{max-width:760px;margin:auto;background:#fff;padding:22px;border-radius:18px;box-shadow:0 8px 28px #1d355712}h1{font-size:25px;margin:0 0 8px}.intro{color:#5b6678;line-height:1.45}.drop{border:2px dashed #9aabc2;border-radius:14px;padding:25px 14px;text-align:center;background:#f8faff;margin:18px 0;cursor:pointer}.drop strong{display:block;margin-bottom:7px}.grid{display:grid;grid-template-columns:1fr 1fr;gap:13px;margin:18px 0}label{font-size:14px;font-weight:700}input,select{width:100%;padding:12px;margin-top:7px;border:1px solid #cbd5e1;border-radius:9px;font-size:16px;background:#fff}.check{display:flex;align-items:center;gap:9px;font-weight:500}.check input{width:auto;margin:0}.buttons{display:flex;gap:10px;flex-wrap:wrap}button{border:0;border-radius:10px;padding:13px 16px;font-size:15px;font-weight:700;cursor:pointer}.primary{background:#155eef;color:white}.other{background:#e9eff9;color:#172033}button:disabled{opacity:.45}.status{white-space:pre-line;margin:16px 0;color:#334155}.row{display:flex;justify-content:space-between;gap:10px;border-top:1px solid #e7ebf1;padding:10px 0;font-size:14px}.muted{color:#64748b}.small{font-size:13px;color:#64748b;line-height:1.5;margin-top:18px}@media(max-width:520px){.grid{grid-template-columns:1fr 1fr}.app{padding:17px}h1{font-size:22px}}@media(max-width:360px){.grid{grid-template-columns:1fr}}
+</style></head><body><main class="app">
+<h1>Bulk Image Resizer & Compressor</h1><p class="intro">Select multiple photos, enter your own dimensions and maximum file size, then process them together. Photos stay on your device.</p>
+<div class="drop" id="drop"><strong>＋ Choose multiple images</strong><span class="muted">Tap here to select photos from your phone or computer</span><input id="files" type="file" accept="image/*" multiple hidden></div>
+<div class="grid">
+<label>Width (pixels)<input id="w" type="number" min="1" max="12000" value="250"></label>
+<label>Height (pixels)<input id="h" type="number" min="1" max="12000" value="250"></label>
+<label>Maximum file size (KB)<input id="kb" type="number" min="1" max="50000" value="100"></label>
+<label>Output format<select id="fmt"><option value="image/jpeg">JPG (best for photos)</option><option value="image/webp">WebP (smaller files)</option><option value="image/png">PNG</option></select></label>
+<label class="check"><input id="ratio" type="checkbox"> Keep aspect ratio (fit inside)</label>
+<label>Target size handling<select id="fallback"><option value="best">Keep smallest result if target can't be met</option><option value="skip">Skip if target can't be met</option></select></label>
+</div>
+<div class="buttons"><button class="primary" id="go" disabled>Resize + Compress All</button><button class="other" id="zip" disabled>Download all (ZIP)</button><button class="other" id="clear" disabled>Clear</button></div>
+<div class="status" id="status">No images selected.</div><div id="results"></div>
+<p class="small"><b>Note:</b> The KB setting is a maximum target. Some images—especially PNGs—may not be able to reach a very small size at the chosen dimensions. JPG or WebP is usually best for photographs. If aspect ratio is unchecked, images are stretched to the exact dimensions. ZIP creation uses an internet-loaded library; processing itself happens on your device.</p>
+</main>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+<script>
+const $=id=>document.getElementById(id);let files=[],done=[];
+$('drop').onclick=()=>$('files').click();$('files').onchange=e=>add(e.target.files);
+function add(list){files=files.concat([...list].filter(f=>f.type.startsWith('image/')));done=[];$('go').disabled=!files.length;$('clear').disabled=!files.length;$('zip').disabled=true;$('status').textContent=files.length+' image(s) selected.';$('results').innerHTML=files.map(f=>`<div class="row"><span>${esc(f.name)}</span><span class="muted">${(f.size/1024).toFixed(1)} KB</span></div>`).join('')}
+function esc(s){return s.replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))}
+function load(f){return new Promise((ok,no)=>{let u=URL.createObjectURL(f),im=new Image();im.onload=()=>{URL.revokeObjectURL(u);ok(im)};im.onerror=()=>{URL.revokeObjectURL(u);no(Error('Could not open image'))};im.src=u})}
+function blob(c,t,q){return new Promise(r=>c.toBlob(r,t,q))}
+async function processOne(f){let im=await load(f),w=+$('w').value,h=+$('h').value,t=$('fmt').value,c=document.createElement('canvas');c.width=w;c.height=h;let ctx=c.getContext('2d',{alpha:t!=='image/jpeg'});if(t==='image/jpeg'){ctx.fillStyle='#fff';ctx.fillRect(0,0,w,h)}if($('ratio').checked){let s=Math.min(w/im.naturalWidth,h/im.naturalHeight),dw=im.naturalWidth*s,dh=im.naturalHeight*s;ctx.drawImage(im,(w-dw)/2,(h-dh)/2,dw,dh)}else ctx.drawImage(im,0,0,w,h);let limit=+$('kb').value*1024,b;
+if(t==='image/png'){b=await blob(c,t); }else{let lo=.025,hi=.95,best=null;for(let i=0;i<13;i++){let q=(lo+hi)/2,x=await blob(c,t,q);if(x.size<=limit){best=x;lo=q}else hi=q}b=best||await blob(c,t,.025)}
+if(b.size>limit&&$('fallback').value==='skip')return {skip:true,size:b.size};let ext=t==='image/jpeg'?'jpg':t==='image/png'?'png':'webp';return {name:f.name.replace(/\.[^.]+$/,'')+'.'+ext,blob:b,size:b.size,over:b.size>limit}}
+$('go').onclick=async()=>{let w=+$('w').value,h=+$('h').value,k=+$('kb').value;if(!w||!h||!k||w>12000||h>12000){$('status').textContent='Please enter valid width, height and KB values.';return}$('go').disabled=true;done=[];$('results').innerHTML='';let skipped=0;for(let i=0;i<files.length;i++){$('status').textContent=`Processing ${i+1} of ${files.length}: ${files[i].name}`;try{let r=await processOne(files[i]);if(r.skip){skipped++;line(files[i].name,'Skipped — could not reach target size')}else{done.push(r);line(r.name,(r.size/1024).toFixed(1)+' KB'+(r.over?' — target not reached':''))}}catch(e){skipped++;line(files[i].name,'Error: '+e.message)}}$('status').textContent=`Finished: ${done.length} ready, ${skipped} skipped/failed.`;$('go').disabled=false;$('zip').disabled=!done.length};
+function line(a,b){let d=document.createElement('div');d.className='row';let x=document.createElement('span'),y=document.createElement('span');x.textContent=a;y.textContent=b;y.className='muted';d.append(x,y);$('results').append(d)}
+$('zip').onclick=async()=>{if(!window.JSZip){$('status').textContent='ZIP tool could not load. Connect to the internet and refresh this page.';return}$('zip').disabled=true;$('status').textContent='Preparing ZIP…';let z=new JSZip();done.forEach(x=>z.file(x.name,x.blob));let b=await z.generateAsync({type:'blob'}),u=URL.createObjectURL(b),a=document.createElement('a');a.href=u;a.download='resized-compressed-images.zip';document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(u),3000);$('status').textContent='ZIP download started.';$('zip').disabled=false};
+$('clear').onclick=()=>{files=[];done=[];$('files').value='';$('results').innerHTML='';$('status').textContent='No images selected.';$('go').disabled=$('zip').disabled=$('clear').disabled=true};
+</script></body></html>
